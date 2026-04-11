@@ -55,6 +55,17 @@
   .overlay-msg p{font-family:var(--mono);font-size:13px;color:var(--muted)}
   .spinner{width:32px;height:32px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
   @keyframes spin{to{transform:rotate(360deg)}}
+  .search-wrap{position:relative;display:flex;align-items:center}
+  .search-input{font-family:var(--mono);font-size:12px;padding:5px 32px 5px 12px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text);width:180px;outline:none;transition:border-color .15s}
+  .search-input::placeholder{color:var(--muted)}
+  .search-input:focus{border-color:var(--accent)}
+  .search-btn{position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:0;line-height:1;transition:color .15s}
+  .search-btn:hover{color:var(--accent)}
+  .search-suggestions{position:absolute;top:calc(100% + 4px);left:0;width:260px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.1);z-index:9999;overflow:hidden;display:none}
+  .search-suggestions.show{display:block}
+  .suggestion-item{padding:8px 14px;font-size:12px;font-family:var(--mono);cursor:pointer;color:var(--text);transition:background .1s}
+  .suggestion-item:hover{background:var(--surface2)}
+  .suggestion-item+.suggestion-item{border-top:1px solid var(--border)}
 </style>
 </head>
 <body>
@@ -73,6 +84,11 @@
     <button class="fuel-btn" data-fuel="SP98">SP98</button>
     <button class="fuel-btn" data-fuel="GPLc">GPLc</button>
     <button class="fuel-btn" data-fuel="E85">E85</button>
+  </div>
+  <div class="search-wrap">
+    <input class="search-input" id="search-input" type="text" placeholder="Rechercher une ville…" autocomplete="off">
+    <button class="search-btn" id="search-btn">⌕</button>
+    <div class="search-suggestions" id="search-suggestions"></div>
   </div>
   <div class="status-bar">
     <div class="dot loading" id="status-dot"></div>
@@ -254,6 +270,71 @@ document.getElementById('fuel-buttons').addEventListener('click',e=>{
 });
 
 loadData();
+
+// ── Recherche de ville via Nominatim ──────────────────────────────
+let searchTimer = null;
+const searchInput = document.getElementById("search-input");
+const searchSugg  = document.getElementById("search-suggestions");
+
+searchInput.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  const q = searchInput.value.trim();
+  if (q.length < 2) { searchSugg.classList.remove("show"); return; }
+  searchTimer = setTimeout(() => fetchSuggestions(q), 350);
+});
+
+searchInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    clearTimeout(searchTimer);
+    fetchSuggestions(searchInput.value.trim(), true);
+  }
+  if (e.key === "Escape") searchSugg.classList.remove("show");
+});
+
+document.getElementById("search-btn").addEventListener("click", () => {
+  clearTimeout(searchTimer);
+  fetchSuggestions(searchInput.value.trim(), true);
+});
+
+document.addEventListener("click", e => {
+  if (!e.target.closest(".search-wrap")) searchSugg.classList.remove("show");
+});
+
+async function fetchSuggestions(q, goFirst = false) {
+  if (!q) return;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)},France&format=json&limit=5&accept-language=fr&countrycodes=fr`;
+    const res = await fetch(url, { headers: { "Accept-Language": "fr" } });
+    const data = await res.json();
+    if (!data.length) { searchSugg.innerHTML = '<div class="suggestion-item" style="color:var(--muted)">Aucun résultat</div>'; searchSugg.classList.add("show"); return; }
+    if (goFirst) { gotoPlace(data[0]); searchSugg.classList.remove("show"); return; }
+    searchSugg.innerHTML = data.map((p,i) =>
+      `<div class="suggestion-item" data-idx="${i}">${p.display_name.split(",").slice(0,3).join(", ")}</div>`
+    ).join("");
+    searchSugg._data = data;
+    searchSugg.classList.add("show");
+  } catch(e) { console.error(e); }
+}
+
+searchSugg.addEventListener("click", e => {
+  const item = e.target.closest(".suggestion-item");
+  if (!item) return;
+  const idx = parseInt(item.dataset.idx);
+  gotoPlace(searchSugg._data[idx]);
+  searchInput.value = searchSugg._data[idx].display_name.split(",").slice(0,2).join(", ");
+  searchSugg.classList.remove("show");
+});
+
+function gotoPlace(place) {
+  const lat = parseFloat(place.lat);
+  const lon = parseFloat(place.lon);
+  const bb  = place.boundingbox;
+  if (bb) {
+    map.fitBounds([[+bb[0],+bb[2]],[+bb[1],+bb[3]]], { maxZoom: 13 });
+  } else {
+    map.setView([lat, lon], 12);
+  }
+}
 </script>
 </body>
 </html>
