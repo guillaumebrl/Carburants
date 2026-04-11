@@ -38,7 +38,10 @@
   .legend-title{font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em}
   .legend-bar{height:7px;border-radius:4px;background:linear-gradient(to right,#2196f3,#4caf50,#ffeb3b,#ff9800,#f44336);margin-bottom:6px}
   .legend-labels{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted)}
-  .stats-panel{position:absolute;top:16px;right:16px;z-index:1000;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;min-width:165px}
+  .info-btn{position:absolute;top:16px;right:16px;z-index:1000;width:28px;height:28px;border-radius:50%;background:var(--surface);border:1px solid var(--border);cursor:pointer;font-family:var(--mono);font-size:13px;font-weight:500;color:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.1);transition:background .15s}
+  .info-btn:hover{background:var(--surface2)}
+  .stats-panel{position:absolute;top:52px;right:16px;z-index:1000;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;min-width:165px;transition:opacity .15s,transform .15s;transform-origin:top right}
+  .stats-panel.hidden{opacity:0;pointer-events:none;transform:scale(0.95)}
   .stat-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0}
   .stat-row+.stat-row{border-top:1px solid var(--border)}
   .stat-label{color:var(--muted);font-size:11px}
@@ -114,7 +117,8 @@
     </div>
   </div>
 
-  <div class="stats-panel" id="stats-panel" style="display:none">
+  <button class="info-btn" id="info-btn" title="Statistiques" style="display:none">i</button>
+  <div class="stats-panel hidden" id="stats-panel">
     <div class="stat-row"><span class="stat-label">Stations</span><span class="stat-val mid" id="st-count">—</span></div>
     <div class="stat-row"><span class="stat-label">Min</span><span class="stat-val low" id="st-min">—</span></div>
     <div class="stat-row"><span class="stat-label">Moyenne</span><span class="stat-val mid" id="st-avg">—</span></div>
@@ -240,7 +244,8 @@ function renderFuel(fuel){
   document.getElementById('leg-min').textContent=minP.toFixed(2);
   document.getElementById('leg-mid').textContent=((minP+maxP)/2).toFixed(2);
   document.getElementById('leg-max').textContent=maxP.toFixed(2);
-  document.getElementById('stats-panel').style.display='';
+  document.getElementById('stats-panel').classList.remove('hidden');
+  document.getElementById('info-btn').style.display='';
   document.getElementById('legend').style.display='';
 
   rows.forEach(r=>{
@@ -270,6 +275,11 @@ document.getElementById('fuel-buttons').addEventListener('click',e=>{
 });
 
 loadData();
+
+// ── Bouton info ───────────────────────────────────────────────────
+document.getElementById('info-btn').addEventListener('click', () => {
+  document.getElementById('stats-panel').classList.toggle('hidden');
+});
 
 // ── Recherche de ville via Nominatim ──────────────────────────────
 let searchTimer = null;
