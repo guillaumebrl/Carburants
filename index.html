@@ -55,12 +55,6 @@
   .overlay-msg p{font-family:var(--mono);font-size:13px;color:var(--muted)}
   .spinner{width:32px;height:32px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
   @keyframes spin{to{transform:rotate(360deg)}}
-  .cors-box{display:none;position:absolute;inset:0;z-index:3000;background:var(--bg);flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:32px;text-align:center}
-  .cors-box.show{display:flex}
-  .cors-box h2{font-size:17px;font-weight:500;color:var(--accent)}
-  .cors-box p{font-size:13px;color:var(--muted);max-width:480px;line-height:1.7}
-  .cors-box code{display:block;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:var(--mono);font-size:12px;color:var(--accent2);text-align:left;max-width:500px;width:100%}
-  .cors-box a{color:var(--accent);font-family:var(--mono);font-size:12px}
 </style>
 </head>
 <body>
@@ -69,7 +63,7 @@
     <div class="brand-icon">⛽</div>
     <div>
       <h1>Prix Carburants</h1>
-      <span>données instantanées · France</span>
+      <span id="data-date">données · France</span>
     </div>
   </div>
   <div class="controls" id="fuel-buttons">
@@ -91,7 +85,7 @@
 
   <div class="overlay-msg" id="loading-overlay">
     <div class="spinner"></div>
-    <p>Récupération des données…</p>
+    <p>Lecture des données…</p>
   </div>
 
   <div class="legend" id="legend" style="display:none">
@@ -109,169 +103,135 @@
     <div class="stat-row"><span class="stat-label">Min</span><span class="stat-val low" id="st-min">—</span></div>
     <div class="stat-row"><span class="stat-label">Moyenne</span><span class="stat-val mid" id="st-avg">—</span></div>
     <div class="stat-row"><span class="stat-label">Max</span><span class="stat-val high" id="st-max">—</span></div>
-    <div class="stat-row"><span class="stat-label">Màj</span><span class="stat-val" id="st-date" style="font-size:10px;color:var(--muted)">—</span></div>
-  </div>
-
-  <div class="cors-box" id="cors-warning">
-    <h2>⚠ Problème CORS</h2>
-    <p>Le navigateur bloque la requête vers <strong>donnees.roulez-eco.fr</strong>. Sur GitHub Pages, ce proxy public est utilisé automatiquement. En local, vous pouvez lancer un serveur avec CORS activé :</p>
-    <code>npx serve . --cors<br>  # ou<br>npx http-server . --cors</code>
-    <p style="margin-top:4px"><a href="https://donnees.roulez-eco.fr/opendata/instantane" target="_blank">↗ Vérifier la source de données</a></p>
+    <div class="stat-row"><span class="stat-label">Fichier</span><span class="stat-val" id="st-date" style="font-size:10px;color:var(--muted)">—</span></div>
   </div>
 </div>
 
 <script>
-const PROXIES = [
-  url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  url => url,
-];
-const DATA_URL = 'https://donnees.roulez-eco.fr/opendata/instantane';
-
 const COLOR_SCALE = [
-  [0.00, [33,150,243]],
-  [0.25, [76,175,80]],
-  [0.55, [255,235,59]],
-  [0.80, [255,152,0]],
-  [1.00, [244,67,54]],
+  [0.00,[33,150,243]],[0.25,[76,175,80]],[0.55,[255,235,59]],[0.80,[255,152,0]],[1.00,[244,67,54]]
 ];
-
-function lerp(a, b, t) { return a + (b - a) * t; }
-function colorAt(t) {
-  t = Math.max(0, Math.min(1, t));
-  let i = 0;
-  while (i < COLOR_SCALE.length - 2 && COLOR_SCALE[i+1][0] <= t) i++;
-  const [t0, c0] = COLOR_SCALE[i];
-  const [t1, c1] = COLOR_SCALE[i+1];
-  const f = (t - t0) / (t1 - t0);
-  const r = Math.round(lerp(c0[0],c1[0],f));
-  const g = Math.round(lerp(c0[1],c1[1],f));
-  const b = Math.round(lerp(c0[2],c1[2],f));
-  return `rgb(${r},${g},${b})`;
+function lerp(a,b,t){return a+(b-a)*t}
+function colorAt(t){
+  t=Math.max(0,Math.min(1,t));
+  let i=0;
+  while(i<COLOR_SCALE.length-2&&COLOR_SCALE[i+1][0]<=t)i++;
+  const[t0,c0]=COLOR_SCALE[i],[t1,c1]=COLOR_SCALE[i+1],f=(t-t0)/(t1-t0);
+  return `rgb(${Math.round(lerp(c0[0],c1[0],f))},${Math.round(lerp(c0[1],c1[1],f))},${Math.round(lerp(c0[2],c1[2],f))})`;
 }
 
-const map = L.map('map', {zoomControl:false}).setView([46.7, 2.51], 6);
+const map = L.map('map',{zoomControl:false}).setView([46.7,2.51],6);
 L.control.zoom({position:'bottomright'}).addTo(map);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  attribution:'© OpenStreetMap © CARTO', maxZoom:19
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+  attribution:'© OpenStreetMap © CARTO',maxZoom:19
 }).addTo(map);
 
-let allData = [];
-let markerLayer = L.layerGroup().addTo(map);
-let currentFuel = 'Gazole';
+let allData=[], markerLayer=L.layerGroup().addTo(map), currentFuel='Gazole';
 
-function setStatus(state, text) {
-  document.getElementById('status-dot').className = 'dot ' + state;
-  document.getElementById('status-text').textContent = text;
+function setStatus(state,text){
+  document.getElementById('status-dot').className='dot '+state;
+  document.getElementById('status-text').textContent=text;
 }
 
-async function fetchWithProxies(url) {
-  for (const makeUrl of PROXIES) {
-    try {
-      const resp = await fetch(makeUrl(url));
-      if (resp.ok) return await resp.arrayBuffer();
-    } catch(e) {}
-  }
-  return null;
-}
-
-async function unzip(buffer) {
-  const arr = new Uint8Array(buffer);
-  let off = 0;
-  while (off < arr.length - 30) {
-    if (arr[off]===0x50&&arr[off+1]===0x4b&&arr[off+2]===0x03&&arr[off+3]===0x04) break;
+async function unzip(buffer){
+  const arr=new Uint8Array(buffer);
+  let off=0;
+  while(off<arr.length-30){
+    if(arr[off]===0x50&&arr[off+1]===0x4b&&arr[off+2]===0x03&&arr[off+3]===0x04)break;
     off++;
   }
-  const comp     = (arr[off+8])|(arr[off+9]<<8);
-  const compSize = (arr[off+18])|(arr[off+19]<<8)|(arr[off+20]<<16)|(arr[off+21]<<24);
-  const fnLen    = (arr[off+26])|(arr[off+27]<<8);
-  const exLen    = (arr[off+28])|(arr[off+29]<<8);
-  const dataOff  = off + 30 + fnLen + exLen;
-  const compressed = arr.slice(dataOff, dataOff + compSize);
-  if (comp === 0) return compressed;
-  const ds = new DecompressionStream('deflate-raw');
-  const w = ds.writable.getWriter(); w.write(compressed); w.close();
-  const chunks = []; const r = ds.readable.getReader();
-  while (true) { const {done,value} = await r.read(); if(done)break; chunks.push(value); }
-  let total = 0; chunks.forEach(c => total+=c.length);
-  const out = new Uint8Array(total); let pos = 0;
-  chunks.forEach(c => { out.set(c,pos); pos+=c.length; });
+  const comp=(arr[off+8])|(arr[off+9]<<8);
+  const compSize=(arr[off+18])|(arr[off+19]<<8)|(arr[off+20]<<16)|(arr[off+21]<<24);
+  const fnLen=(arr[off+26])|(arr[off+27]<<8);
+  const exLen=(arr[off+28])|(arr[off+29]<<8);
+  const dataOff=off+30+fnLen+exLen;
+  const compressed=arr.slice(dataOff,dataOff+compSize);
+  if(comp===0)return compressed;
+  const ds=new DecompressionStream('deflate-raw');
+  const w=ds.writable.getWriter();w.write(compressed);w.close();
+  const chunks=[],r=ds.readable.getReader();
+  while(true){const{done,value}=await r.read();if(done)break;chunks.push(value);}
+  let total=0;chunks.forEach(c=>total+=c.length);
+  const out=new Uint8Array(total);let pos=0;
+  chunks.forEach(c=>{out.set(c,pos);pos+=c.length;});
   return out;
 }
 
-function parseXML(xmlText) {
-  const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
-  const rows = [];
-  doc.querySelectorAll('pdv').forEach(pdv => {
-    const lat = parseFloat(pdv.getAttribute('latitude')) / 100000;
-    const lon = parseFloat(pdv.getAttribute('longitude')) / 100000;
-    if (isNaN(lat)||isNaN(lon)) return;
-    const adresse = pdv.querySelector('adresse')?.textContent || '';
-    const ville   = pdv.querySelector('ville')?.textContent || '';
-    const cp      = pdv.getAttribute('cp') || '';
-    pdv.querySelectorAll('prix').forEach(p => {
-      const nom = p.getAttribute('nom');
-      const val = parseFloat(p.getAttribute('valeur'));
-      if (nom && !isNaN(val) && val > 0)
-        rows.push({lat, lon, adresse, ville, cp, carb:nom, prix:val, maj:p.getAttribute('maj')||''});
+function parseXML(xmlText){
+  const doc=new DOMParser().parseFromString(xmlText,'text/xml');
+  const rows=[];
+  doc.querySelectorAll('pdv').forEach(pdv=>{
+    const lat=parseFloat(pdv.getAttribute('latitude'))/100000;
+    const lon=parseFloat(pdv.getAttribute('longitude'))/100000;
+    if(isNaN(lat)||isNaN(lon))return;
+    const adresse=pdv.querySelector('adresse')?.textContent||'';
+    const ville=pdv.querySelector('ville')?.textContent||'';
+    const cp=pdv.getAttribute('cp')||'';
+    pdv.querySelectorAll('prix').forEach(p=>{
+      const nom=p.getAttribute('nom');
+      const val=parseFloat(p.getAttribute('valeur'));
+      if(nom&&!isNaN(val)&&val>0)
+        rows.push({lat,lon,adresse,ville,cp,carb:nom,prix:val,maj:p.getAttribute('maj')||''});
     });
   });
   return rows;
 }
 
-async function loadData() {
-  setStatus('loading', 'Chargement…');
-  document.getElementById('loading-overlay').style.display = '';
-  document.getElementById('legend').style.display = 'none';
-  document.getElementById('stats-panel').style.display = 'none';
-  document.getElementById('cors-warning').classList.remove('show');
+async function loadData(){
+  setStatus('loading','Chargement…');
+  try {
+    const resp = await fetch('data.zip');
+    if (!resp.ok) throw new Error('data.zip introuvable (HTTP '+resp.status+')');
 
-  const buf = await fetchWithProxies(DATA_URL);
-  if (!buf) {
-    document.getElementById('loading-overlay').style.display = 'none';
-    document.getElementById('cors-warning').classList.add('show');
-    setStatus('error', 'Erreur réseau');
-    return;
+    // Récupère la date de dernière modification depuis les headers HTTP
+    const lastMod = resp.headers.get('last-modified');
+    if (lastMod) {
+      const d = new Date(lastMod);
+      document.getElementById('data-date').textContent =
+        'données du ' + d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})
+        + ' ' + d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+    }
+
+    const buf = await resp.arrayBuffer();
+    const bytes = await unzip(buf);
+    const xml = new TextDecoder('iso-8859-1').decode(bytes);
+    allData = parseXML(xml);
+
+    document.getElementById('loading-overlay').style.display='none';
+    setStatus('ok', allData.length.toLocaleString('fr')+' entrées');
+    renderFuel(currentFuel);
+  } catch(e) {
+    document.getElementById('loading-overlay').style.display='none';
+    setStatus('error', e.message);
   }
-
-  const bytes = await unzip(buf);
-  const xml = new TextDecoder('iso-8859-1').decode(bytes);
-  allData = parseXML(xml);
-
-  document.getElementById('loading-overlay').style.display = 'none';
-  const now = new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-  setStatus('ok', `${allData.length.toLocaleString('fr')} entrées · ${now}`);
-  renderFuel(currentFuel);
 }
 
-function renderFuel(fuel) {
+function renderFuel(fuel){
   markerLayer.clearLayers();
-  const rows = allData.filter(r => r.carb === fuel);
-  if (!rows.length) { setStatus('ok','Aucune donnée pour '+fuel); return; }
+  const rows=allData.filter(r=>r.carb===fuel);
+  if(!rows.length){setStatus('ok','Aucune donnée pour '+fuel);return;}
 
-  const prices = rows.map(r => r.prix);
-  const minP = Math.min(...prices);
-  const maxP = Math.max(...prices);
-  const avgP = prices.reduce((a,b)=>a+b,0) / prices.length;
+  const prices=rows.map(r=>r.prix);
+  const minP=Math.min(...prices),maxP=Math.max(...prices);
+  const avgP=prices.reduce((a,b)=>a+b,0)/prices.length;
 
-  document.getElementById('st-count').textContent = rows.length.toLocaleString('fr');
-  document.getElementById('st-min').textContent   = minP.toFixed(3)+' €';
-  document.getElementById('st-avg').textContent   = avgP.toFixed(3)+' €';
-  document.getElementById('st-max').textContent   = maxP.toFixed(3)+' €';
-  const latest = rows.map(r=>r.maj).filter(Boolean).sort().reverse()[0];
-  document.getElementById('st-date').textContent  = latest ? latest.slice(0,10) : '—';
-  document.getElementById('leg-min').textContent  = minP.toFixed(2);
-  document.getElementById('leg-mid').textContent  = ((minP+maxP)/2).toFixed(2);
-  document.getElementById('leg-max').textContent  = maxP.toFixed(2);
-  document.getElementById('stats-panel').style.display = '';
-  document.getElementById('legend').style.display = '';
+  document.getElementById('st-count').textContent=rows.length.toLocaleString('fr');
+  document.getElementById('st-min').textContent=minP.toFixed(3)+' €';
+  document.getElementById('st-avg').textContent=avgP.toFixed(3)+' €';
+  document.getElementById('st-max').textContent=maxP.toFixed(3)+' €';
+  const latest=rows.map(r=>r.maj).filter(Boolean).sort().reverse()[0];
+  document.getElementById('st-date').textContent=latest?latest.slice(0,10):'—';
+  document.getElementById('leg-min').textContent=minP.toFixed(2);
+  document.getElementById('leg-mid').textContent=((minP+maxP)/2).toFixed(2);
+  document.getElementById('leg-max').textContent=maxP.toFixed(2);
+  document.getElementById('stats-panel').style.display='';
+  document.getElementById('legend').style.display='';
 
-  rows.forEach(r => {
-    const t = maxP > minP ? (r.prix - minP) / (maxP - minP) : 0.5;
-    const color = colorAt(t);
-    const m = L.circleMarker([r.lat, r.lon], {
-      radius:5, fillColor:color, color:'rgba(0,0,0,.4)',
-      weight:.5, opacity:1, fillOpacity:.85
+  rows.forEach(r=>{
+    const t=maxP>minP?(r.prix-minP)/(maxP-minP):0.5;
+    const m=L.circleMarker([r.lat,r.lon],{
+      radius:5,fillColor:colorAt(t),color:'rgba(0,0,0,.4)',
+      weight:.5,opacity:1,fillOpacity:.85
     });
     m.bindPopup(`
       <div class="popup-price">${r.prix.toFixed(3)} €/L</div>
@@ -279,17 +239,17 @@ function renderFuel(fuel) {
       <div class="popup-label">Adresse</div><div class="popup-val">${r.adresse||'—'}, ${r.ville||'—'}</div>
       <div class="popup-label">Code postal</div><div class="popup-val">${r.cp}</div>
       <div class="popup-label">Mise à jour</div><div class="popup-val">${r.maj?r.maj.slice(0,10):'—'}</div>
-    `, {maxWidth:240});
+    `,{maxWidth:240});
     markerLayer.addLayer(m);
   });
 }
 
-document.getElementById('fuel-buttons').addEventListener('click', e => {
-  const btn = e.target.closest('.fuel-btn');
-  if (!btn) return;
+document.getElementById('fuel-buttons').addEventListener('click',e=>{
+  const btn=e.target.closest('.fuel-btn');
+  if(!btn)return;
   document.querySelectorAll('.fuel-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  currentFuel = btn.dataset.fuel;
+  currentFuel=btn.dataset.fuel;
   renderFuel(currentFuel);
 });
 
