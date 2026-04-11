@@ -244,7 +244,7 @@ function renderFuel(fuel){
   document.getElementById('leg-min').textContent=minP.toFixed(2);
   document.getElementById('leg-mid').textContent=((minP+maxP)/2).toFixed(2);
   document.getElementById('leg-max').textContent=maxP.toFixed(2);
-  document.getElementById('stats-panel').classList.remove('hidden');
+  // panneau masqué par défaut — s'ouvre au clic sur i
   document.getElementById('info-btn').style.display='';
   document.getElementById('legend').style.display='';
 
