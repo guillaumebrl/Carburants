@@ -4,7 +4,10 @@ on:
   schedule:
     - cron: '0 6 * * *'   # 06h00 UTC (08h00 heure Paris été)
     - cron: '0 12 * * *'  # 12h00 UTC (14h00 heure Paris été)
-  workflow_dispatch:       # permet de lancer manuellement depuis GitHub
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   update:
